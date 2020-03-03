@@ -1,0 +1,278 @@
+---
+title: "Technical Report: What Factors Significantly Affect Android Education App Rating?"
+author: "Group C--Kayla Hubers, Mugdha Danda, Haley Nixon, & Adam Panken"
+date: "Due Friday, December 21"
+output: html_document
+---
+
+```{r, message=FALSE}
+require(knitr)
+opts_chunk$set(eval=TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(Stat2Data)
+library(skimr)
+library(forcats)
+#install.packages("leaps")
+library(leaps)
+library(car)
+```
+
+**Data Cleaning**
+
+```{r}
+# read in data
+appData = read_csv("googleplaystore.csv",na = c("", NA, "NA"))
+
+# change titles with spaces
+appData = appData %>%
+  rename(Content = `Content Rating`) %>%
+  rename(Updated = `Last Updated`) %>%
+  rename(AndroidVer = `Android Ver`)
+
+# remove unwanted predictors, apps with 0 reviews, and apps with no ratings
+appDataProject = appData %>%
+  filter(Reviews!=0, Rating!='NaN') %>%
+  select(Category,Rating, Reviews, Size, Installs, Type, Content,  AndroidVer)
+ 
+# convert price, size, and installs from character to numeric 
+appDataProject$Size = as.numeric(gsub("M", "", appDataProject$Size))
+appDataProject$Installs = (gsub("\\+", "", appDataProject$Installs))
+appDataProject$Installs = as.numeric(gsub("\\,", "", appDataProject$Installs))
+
+# remove unneeded words from AndroidVer categories
+appDataProject$AndroidVer = (gsub("and up", "", appDataProject$AndroidVer))
+appDataProject$AndroidVer = (gsub("Varies with device", "", appDataProject$AndroidVer))
+
+
+# narrow data set so that we are only looking at education apps
+# this will be used for our final model
+appDataProject2 = appDataProject %>%
+  filter(Category == "EDUCATION") %>%
+  select(Rating, Reviews, Size, Installs, Type, Content,  AndroidVer)
+```
+
+***
+
+# Abstract
+
+For this report, RStudio was used to try and find a model capable of accurately predicting Android education app rating in the Google Play Store, using a p-level of 0.05. Initially, our research focused on apps of all categories (Games, Communication, Education, etc.). However, for our final model we narrowed the category to only include education apps due to the significantly higher adjusted R-squared, compared to the full model. Our final model was developed using backwards elimination (by hand), and we found that Reviews (number of reviews), AndroidVer (minimum required Android version), and Type (whether app is paid or free), were the most significant predictors of education app rating. Additionally, using these predictors in our model explained approximately 34.71% of the variability in the response, education app rating. Furthermore, our model showed that for an education app’s rating, the rating is expected to increase as the number of reviews increases (holding all else constant), the rating for paid education apps is expected to be higher compared to free apps (holding all else constant), and that Android version 4.1 is statistically different than apps with a minimum required version that “varies with device” (holding all else constant). Note: the data for our research was taken from a data set on Kaggle.com.  
+
+***
+
+# Introduction
+
+Currently, researchers estimate that the average US adult spends around 3 hours and 35 minutes on their phone every day in 2018. Researchers also expect that by 2019, mobile phones will surpass TVs in terms of daily usage, highlighting the growing prominence of mobile devices in our daily lives. This represents a significant opportunity for app developers provided that they can capture a portion of this growing audience. Understandably, app developers are already aware of this trend. As of December 2018, there were approximately 2.6M apps on the Google Play Store. This represents an average growth rate of 21% from July of 2013, when the Google Play Store contained around 1M apps. 
+
+That said, we wanted our research question to be related to this phenomenon and consequently chose to investigate: What factors significantly affect Google Play Store education app ratings? We chose to investigate the app ratings because of the important role app ratings play in helping differentiate an app from the large number of competing apps. Additionally, we chose to focus our research on apps in the education category, specifically, because of our own individual experiences with education apps.
+
+As many people would expect, a positive app rating is important for gaining new users. In a survey conducted by Appentive, 59% of users said that they usually or always check the rating of an app prior to downloading it. Additionally, according to a study from Nielsen, a market research firm, approximately 50% of people found their last app by searching the app store. This is significant because in order to help users find good apps, Google has optimized their algorithm to prioritize apps that have superior reviews, meaning that they will come up earlier in a search. This is massively important for app developers due to the fact that a higher rating will not only encourage more people to download and use a specific app, but it will also make an app appear earlier in a search; creating a positive cycle that will lead to growth in an app’s user base.
+
+Overall, our research question was: What factors significantly affect Google Play Store education app ratings? As previously discussed, this is an important research question given the pivotal role app ratings play in attracting new users to an app.  To answer this research question, we looked at a sample of education apps in the Google Play Store via a data set on Kaggle.com, in order to uncover what predictors are statistically significant when it comes to predicting rating, and which lack evidence of a statistically significant relationship with rating. Predictors / factors considered were as follows: Reviews, Size, Installs, Type, Content, and AndroidVer. The final model we produced included Reviews, Type, and AndroidVer as significant predictors, due to their significant p-values and corresponding influence on the response. Together, this model explains approximately 34.71% of the variability in education app rating.   Likewise, the model **suggests** that rating increases as number of reviews increases (holding all else constant), paid apps tend to have higher rating compared to free apps (holding all else constant), and that Android version 4.1 is statistically different than apps with a minimum required version that “varies with device” (holding all else constant).
+
+***
+
+# Data
+
+```{r}
+# Summary Statistics
+skim(appDataProject)
+```
+
+Our data set for this project was obtained from Kaggle.com (https://www.kaggle.com/lava18/google-play-store-apps). Specifically, the population of interest that was sampled was Google Play Store apps (later narrowed to just education apps for our final model). This sample was collected via web scraping—by a Kaggle user—from the Google Play Store, in order to obtain this app information for a portion of the available apps. Specifically, this web scraping was carried out and provided by Kaggle user, Lavanya Gupta, who is a software engineer at HSBC Software Development.
+
+After data cleaning and wrangling, the variables that remained from the original data set were as follows: Category, Rating, Reviews, Size, Installs, Type, Content, AndroidVer. Note that variables Price, Genres, Last Updated, and Current Ver were removed from the data set due to inferred multicollinearity with the other variables we selected. The following univariate analysis of our selected variables was derived from the corresponding "Summary Statistics" output included at the beginning of this section, and corresponds to the values at the time when the data was scraped.
+
+1. Rating: This quantitative **response** variable corresponds to the overall user rating of the app and has “stars” as the units, in increments of 0.1. The values range from a minimum of 1 to a maximum of 5, with a mean value of 4.19. Likewise, there are 0 missing values.
+
+2. Reviews: This quantitative predictor variable corresponds to the number of user reviews for the app, with units simply being “reviews.” Note that during the data wrangling and cleaning process we removed any apps with Reviews equal to 0 or “NaN”, thus there are no missing values for this variable. Moreover, the values range from a minimum of 1 to a maximum of 78,000,000 reviews, with a mean of 514,049.84 reviews.
+
+3. Size: This quantitative predictor variable describes the size of the app in megabytes. During the data wrangling and cleaning process we decided to focus our attention on the apps with size in megabytes, and thus opted to simply change kilobyte and “Varies with device” values to “Na.” Accordingly, there are 1895 missing values (316 due to changing kilobyte values to "Na" -- and only 2 attributable to that specific change after we narrowed our data set to only include education apps), along with a minimum value of 1 megabyte, maximum value of 100 megabytes, and mean value of 23.74 megabytes.
+
+4. Installs: This quantitative predictor corresponds to the number of downloads for the app, and simply has the units “installs.” There are 0 missing values, and a minimum value of 1 install, maximum of 1,000,000,000 installs, and a corresponding mean of 18,000,000 installs.
+
+5. Category: This categorical predictor variable is made up of 33 different categories—such as Games, Communication, and Education—and had 0 missing values within our data set. In essence, it describes the general category that the app belongs to.
+
+6. Type: This binary predictor corresponds to whether the app is paid or free, and accordingly just has two categories: “Free” and “Paid.” Likewise, there are 0 missing values for this variable.
+
+7. Content: This categorical predictor variable corresponds to the age group that the app is targeted at, and is made up of 6 different categories, such as “Everyone”, “Teen”, and “Everyone 10+”. Likewise, there are 0 missing values for this variable.
+
+8. AndroidVer: Lastly, this categorical predictor variable corresponds to the minimum Android version that the app requires. There are 32 categories such as 3.0, 4.0.3, and 4.4, along with 0 missing values.
+
+***
+
+# Model
+
+```{r}
+# Original Model: Multicollinearity Test
+vif(lm(Rating ~ ., data=appDataProject))
+
+# Original Model: Backward Elimination
+appDataProject = appDataProject %>%
+  mutate(Category = fct_relevel(Category, ref="GAME"))
+backwardApp = lm(exp(Rating) ~ .-Content-Installs-Size, data=appDataProject)
+anova(backwardApp)
+
+# Original Model: Summary
+summary(backwardApp)
+```
+
+To begin, our group originally attempted to build a model incorporating “Category” as one of the predictors. In doing so, we used the multicollinearity test and backward elimination by hand (code and output included above as “Original Model: Multicollinearity Test” and “Original Model: Backward Elimination” for reference) to produce a model. However, this model — with Category, Reviews, Type, and AndroidVer as predictors — had a very low R-squared which only accounted for roughly 5% of the variability (see bottom of “Original Model: Summary” above). Moreover, the model had to be transformed via exponentiation in order to satisfy the conditions for linear regression. Thus, not only did the model not account for a substantial portion of the variability in the response, but it also rendered the coefficients difficult to interpret due to the exponentiated transformation.
+
+```{r}
+# check for multicollinearity in education app data
+
+# STEP 1
+vif(lm(Rating ~ ., data=appDataProject2))
+# STEP 2
+vif(lm(Rating~ .-Installs, data=appDataProject2))
+```
+
+```{r}
+# Final Model 
+backwardApp2 = lm(Rating ~ .-Installs-Content-Size, data=appDataProject2)
+anova(backwardApp2)
+
+# Final Model Summary
+summary(backwardApp2)
+```
+
+With that said, our group decided to focus our model and project question further by selecting a single category of apps to build a model for. In other words, we decided to just select one of the categories within “Category” to build a model for. Specifically, we decided to have our model focus solely on the category of education apps. Upon doing so, Category was logically no longer a predictor in our model, since education now would have been the only category within that variable. Subsequently, to decide upon which variables to include within our model, we began by checking for multicollinearity between Reviews, Size, Installs, Type, Content, and AndroidVer. In doing so, we identified multicollinearity between Installs and Reviews (due to their GVIF values greater than 5), and ultimately removed Installs, due to its higher GVIF value, from the model to resolve the issue (see "STEP 1" and "STEP 2" above). Next, we carried out backward elimination by hand, starting with the full model (minus Installs), and continuously ran anova, removing one variable at a time (one with largest p-value) until all variables were significant. This process resulted in Size and Content being removed from the model due to insignificant p-values. Overall, as can be seen in "Final Model" code and output included above, our model for predicting education app Rating included Reviews, Type, and AndroidVer as our significant predictors.
+
+Using the adjusted R-squared values to compare this model to the original attempt (including all categories of Category), we can see that this model resulted in a much higher adjusted R-squared value of 0.2488, compared to the original model with 0.0497 (as can be seen at the bottom of "Final Model Summary" above). Moreover, this narrowed model is also preferred since it did not require any transformations to satisfy the conditions for linear regression, as will be discussed in further detail in the Results section.
+
+***
+
+# Results
+
+**Assess Plots and Conditions**
+
+```{r}
+# Final Model: Residuals vs. Fitted Plot
+plot(backwardApp2, which = 1)
+
+# Final Model: QQ Plot
+plot(backwardApp2, which = 2)
+```
+
+To begin, before interpreting the data it is essential to assess the residual plots corresponding to our model to identify whether the conditions for linear regression are satisfied: linearity, independence, normality, and equality of variance.
+
+First, to assess linearity, we can look at the red line on the Residuals vs. Fitted Plot for the data (pictured above as “Final Model: Residuals vs. Fitted Plot”). In the Residuals vs Fitted plot, the data appears to fulfill the linearity condition since there are no indications of a non-linear pattern. In other words, the red line on the plot is not constantly fluctuating and consistently stays near the "0" residuals line. Likewise, the residuals are equally dispersed above and below the “0” line as we move across the graph. Thus, using the Residuals vs Fitted plot as a guide, the linearity condition is clearly met.
+
+Next, in thinking about the data, there is arguably independence between cases / observations. In other words, the rating for one app is not dependent on the rating of another app. The only potential exception to this may be apps made by the same organization, in which case app content features may be similar, thus resulting (potentially) in more similar ratings between apps made by the same organization versus different organizations. Nonetheless, I don’t believe that this caveat is evidence enough to violate this condition entirely. As a whole, the rating of one education app compared to another is at the discretion of the user’s reviews and dependent on a variety of factors unique to each app, and thus is quite independent. 
+
+Subsequently, in checking the QQ Plot (pictured above as “Final Model: QQ Plot”) to assess normality, almost all the points in the plot stay close to the line, with practically no big errors and no S- nor C-shaped curve pattern. There are some small errors throughout, but nothing substantial that would result in a violation of the normality condition. Hence, this condition is met since overall the plot's points stay close to the line.
+
+Finally, in looking at the Residuals vs Fitted plot again, it can be seen that the band of residuals has a fairly consistent width, especially within the middle portion of the plot. There are some slight indications of narrowing of the residuals when looking at the first and last 1/3 of the plot (near fitted values 3.8 to 4.0 and 4.6 to 4.8). However, as a whole the plot arguably satisfies equality of variance since the majority of points on the plot do in fact have a consistent band width, showing that the equality of variance condition is probably reasonable for this model.
+
+Altogether, all four conditions are arguably met for this model, and thus the conditions for inference are met. Therefore, it is fitting to use this linear regression model, and we can proceed with analyzing the corresponding model data output. Moreover, it is important to note that there was no need for transformations within our model in order to satisfy these conditions. This is beneficial because it will allow for easier, more intuitive interpretation of coefficients.
+
+
+**R-squared Interpretation**
+
+```{r}
+# Final Model Summary
+summary(backwardApp2)
+```
+
+Next, the adjusted and multiple R-squared values will be analyzed in order to compare the original and final model, and assess the relative amount of variability that our model explains for the response, respectively. Both the multiple and adjusted R-squared values are included above at the bottom of the “Final Model Summary” output. 
+
+To begin, adjusted R-squared will be used to compare the original and final model. Adjusted R-squared is more fitting in this case because it is good for comparing models and adjusts for the number of predictors in the model (don’t have to worry about the value being high simply due to the number of variables).  The adjusted R-squared value for the original model (with all categories within “Category” included) was 0.0497. Again, this extremely low R-squared prompted us to develop a new, more focused model focused solely on the category of education apps. This model, compared to the original, resulted in a significantly higher adjusted R-squared value of 0.2488. The fact that the adjusted R-squared was higher when looking at a given category may provide evidence that the significance of each of the predictors (reference section “Data” to view the predictors that were considered) varies considerably depending on the app category. Moreover, it suggests that it may be beneficial / important to analyze apps based on the category they fall into, instead of analyzing all apps together, in order to obtain more meaningful, accurate results. 
+
+Subsequently, the multiple R-squared value can be used to assess the amount of variability in the response that our final model accounts for, as it allows for a more intuitive interpretation. Specifically, we can state that our final model, using Reviews, Type, and AndroidVer as the predictors, explains approximately 34.71% of the variability in education app rating. 
+
+Correspondingly, although the R-squared value is substantially higher for the education apps model versus the original model, there is still a significant portion of the variability that our final model does not account for. This specifically tells us something that we didn’t know before: the predictors considered for this model, although statistically significant, don’t explain a large portion of the variability in the response. Moreover, this is incredibly important for future research, indicating that it would be valuable to consider additional or different variables when exploring this research question further.
+
+
+**Interpretation of Predictors**
+
+```{r}
+# Final Model (before backward elimination)
+backwardApp3 = lm(exp(Rating) ~ .-Installs, data=appDataProject2)
+anova(backwardApp3)
+
+# Final Model 
+backwardApp2 = lm(Rating ~ .-Installs-Content-Size, data=appDataProject2)
+anova(backwardApp2)
+```
+
+Using our model, we found no evidence of a statistically significant relationship / association between education app Rating and explanatory variables Size and Content, as evidenced by their high p-values of 0.34 and 0.21, respectively, as shown in the “Final Model (before backward elimination)” output included above. On the other hand, we found a statistically significant relationship between education app Rating and explanatory variables Reviews, Type, and AndroidVer as evidenced by their low p-values of 0.0004, 0.0003, and 0.057, respectively (included above in “Final Model” output). 
+
+Thus, our model tells us that there is evidence that Reviews, Type, and AndroidVer are statistically significant predictors for education app rating within this data set. Hence, this directly answers the core question of “What factors significantly affect Android education app rating?”. Nonetheless, it is important to reiterate that even though these are statistically significant predictors, they still only account for roughly a third of the variability in rating. Thus, future research on this question is still strongly recommended in order to look deeper into other potential factors. 
+
+
+**Interpretation of Coefficients**
+
+```{r}
+# Final Model Summary
+summary(backwardApp2)
+```
+
+Given our statistically significant predictors—Reviews, Type, and AndroidVer—we can perform further interpretation via their corresponding coefficients, included above in the “Final Model Summary” output. Beginning with Reviews, the coefficient interpretation is as follows: “When the number of reviews increases by 100,000, we would expect to see a 0.08 “star” increase in education app rating, holding type and Android version constant.” 
+
+With regards to practical significance, this potentially suggests that for substantial increases in number of reviews, we expect to see an increase in rating, holding all else constant. Thus, if organizations / app developers implemented means of increasing the number of users reviewing their app, this could benefit overall rating. For example, integrating app rating prompts, after the user has finished playing a game or interreacted with the app for a period of time, could serve as an effective way to increase the number of app reviews and corresponding rating. Specifically, being especially deliberate about these prompts, and only issuing prompts to users that appear engaged (have been using app for a specified period of time, have played x number of rounds of a game, etc.) could help to prompt reviews by those who are engaged and potentially more satisfied with the app. Additionally, making this process as simple as possible could help to increase the number of individuals who actually click to review the app. In other words, minimizing the number screens that the user is re-directed to, or potentially allowing them to be able to review the app while staying within the app (not being re-directed to app store, if possible). Overall, this coefficient suggests potential with targeted rating prompts when users are within a app. Nonetheless, it is important to note that future research is suggested to actually analyze the effectiveness of such an approach, before moving forward. 
+
+
+Next, the coefficient interpretation for Type is as follows: “Compared to free education apps, we would expect the rating for paid education apps to be 0.41 “stars” higher, holding number of reviews and Android version constant.”
+
+However, the practical significance of this coefficient interpretation is not as intuitive. In other words, it's not as simple as switching an app from being free to paid, and having the rating go up accordingly. Rather, there are likely other factors at work here. For example, users expect paid apps to be, arguably, of a higher quality, potentially offer more features, and so on. Moreover, app developers are aware of this and work to deliver such value to users. Thus, paid apps are unique in that there are higher expectations by users, and work on the developer's/organization's end to deliver on that. Hence, the higher rating for paid apps may simply be a reflection of the higher quality, added features, improved user experience, fewer ads, or other factors which prompt higher ratings. Thus, future research would have to be conducted to further explore the practical significance that this interpretation warrants.
+
+
+Lastly, the coefficient interpretation for AndroidVer is unique given that there are several coefficients corresponding to each category within this categorical variable. That said, attention will be focused on the interpretation for the Android version with the most statistically significant p-value. In looking at the “Final Model Summary” output above, it can be seen that AndroidVer4.1 has the most significant, small p-value of 0.0085. Note that all of the coefficient values for AndroidVer categories are in reference to “Varies with device.” That said, the corresponding coefficient interpretation for Android version 4.1 is as follows: “Compared to apps that have a minimum Android version that varies with device, we would expect the education app rating for those with a minimum Android version of 4.1 to be 0.62 “stars” higher, holding number of reviews and type constant.” 
+
+As with the coefficient interpretation for Type, future research is suggested to gain a better understanding of the practical significance that this interpretation warrants. One specific suggestion would be to find a means of transforming Android version from a categorical to a numeric variable (specifically with regards to versions with two decimal points such as 4.0.3). In doing so, this would likely allow for a more meaningful, intuitive interpretation of this variable in reference to education app rating. Additionally, it would help to move away from viewing each Android version as a separate category (as is the case when AndroidVer is a categorical variable), and instead view it more so on a continuum (as would be the case if AndroidVer was a numeric variable). Overall, this would be helpful since each Android version essentially builds off the one before, and thus is not entirely separate from the one before.
+
+
+NOTE: intercept coefficient interpretation was not relevant for this model, as it would involve interpreting rating of apps in terms of zero reviews, which logically would not be meaningful nor make sense (as an app with zero reviews would not have any rating).
+
+***
+
+# Conclusion
+
+**Findings**
+
+The research question that we originally set out to answer was as follows: What factors significantly affect Google Play Store app rating? Initially, found that significant predictors included Category, Size, Type (whether app is paid or free), AndroidVer, and the amount of Reviews on the Google Play Store. However, in utilizing backward elimination to produce our original model we ended up with a multiple R-squared of 5.80%. This extremely low R-squared prompted us to develop a new, more focused model and question focused solely on education apps: What factors significantly affect Google Play Store **education** app rating? We chose to do so after we found that the variability (R-squared) for some categories of apps is more easily explained than others by the predictors in this data set. 
+
+Therefore, we decided to focus on solely the education category, as to increase the variability we were able to explain, which ended up being around 35%. Correspondingly, our new significant predictors included app Type (paid/non-paid), number of Reviews, and AndroidVer. We did not find evidence that Size, number of Installs, nor Content rating were significant factors in the response (Rating). Further, in summary, we found that we would (1) expect to see a slight increase in rating as number of reviews increases (holding all else constant), (2) we would expect the rating of paid education apps to be higher than free ones (holding all else constant), and (3) that Android version 4.1 is statistically different than apps with a minimum required version that “Varies with device” (holding all else constant). 
+
+
+**Limitations**
+
+Nonetheless, our data and model were not without limitations. Beginning with the data, one limitation is that since we narrowed our data set to education apps only, we were using a relatively small sample size (~200 apps in final sample) to reach our findings. Moreover, it is unknown if the sample overall was truly a random sample of all Google Play Store [education] apps, since the web scraping was performed by a Kaggle user (without additional specifics provided). With that said, the results may not be inherently generalizable to Google Play Store education apps in general. Thus, future research is suggested, with a larger sample size deliberately sampled randomly, in order to determine if the results we obtained are unique to this data set, or generalizable beyond this data set. 
+
+Next, there are three main limitations of our model specifically. First, our model tended to be better at predicting higher rated apps than lower rated apps. This is likely due to the fact that there were very few low rated education apps within this data set. Thus, looking at a larger sample of education apps could help to resolve this issue. 
+
+Second, this model may have unintentionally involved p-hacking. P-hacking, in this case, could have occurred when multiple models (corresponding to different, specific app categories) were tried until one was found with a large, significant R-squared value. This is due to the multiple comparisons problem in which, when using an alpha level of 0.05 for p-value cut off, this means that 1 time in 20 we expect to find a significant result, even though the null is true (in other words, the significant result would simply occur by chance alone). This may not be the case for our project, since only roughly 5 different app categories were looked at before choosing the education category, but is nonetheless something to be noted and cautious of when viewing the results.
+
+Third, our model had a relatively low multiple R-squared, only explaining 34.71% of variability in the response. Thus, there is much underneath the surface that we were unable to explain.  That said, in future research we could attempt to improve the R-squared value by considering additional predictor variables that may have a strong relation to app rating. Specifically, our group believes that five additional factors that could be used in future research to potentially help explain more variability in the response (if we were able to obtain such information) are as follows: (1) number of active users (numeric); (2) presence of push notifications (binary Y/N); (3) number of uninstalls (numeric); (4) average retention after x months / average amount of time app is installed for (numeric); (5) number of reported performance flaws (numeric—number of bugs/crashes reported—potentially related to user friendliness); (6) whether or not app prompts the user to rate it (binary Y/N). 
+
+
+Altogether, despite these limitations, we believe our findings still effectively serves as the beginning stages of exploring the question of what factors significantly impact Android education app rating. 
+
+To reiterate, our research provided implications that significant predictors may be Reviews, Type, and AndroidVer when it comes to education app rating in the Google Play Store. Likewise, it suggested that as number of reviews increase, rating is expected to increase as well (holding all else constant). This specifically could provide positive implications for the importance of prompting users to rate an app while they are within it. Subsequently, we found that paid education apps tend to be higher rated than free (holding all else constant), and some minimum required Android versions are statistically different (based off their p-values) than those that "vary with device" (holding all else constant).
+
+Thus, these results still provide meaningful insights and implications for guiding future research; which, in turn, could help with producing future models that take into account the limitations within our current model and data, and as a result can work to account for more of the variability in education app rating.  Overall, as evidenced in the research in the Introduction, app rating is of utmost importance in today’s day and age. Moreover, importantly, our model and research are helping to begin to take strides towards better understand app rating.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
